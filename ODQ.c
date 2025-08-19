@@ -1,3 +1,4 @@
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -59,7 +60,7 @@ void disable_raw_mode() {
 void enable_raw_mode() {
     tcgetattr(STDIN_FILENO, &orig_termios);
     atexit(disable_raw_mode);
-    
+
     struct termios raw = orig_termios;
     raw.c_lflag &= ~(ECHO | ICANON);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
@@ -68,12 +69,12 @@ void enable_raw_mode() {
 // Функции истории команд
 void add_to_history(const char* command) {
     if (strlen(command) == 0) return;
-    
+
     // Не добавляем повторные команды
     if (history_count > 0 && strcmp(command_history[history_count-1], command) == 0) {
         return;
     }
-    
+
     if (history_count < HISTORY_SIZE) {
         strcpy(command_history[history_count], command);
         history_count++;
@@ -88,14 +89,14 @@ void add_to_history(const char* command) {
 
 const char* get_history_command(int direction) {
     if (history_count == 0) return "";
-    
+
     if (direction == 1) { // Вверх
         if (history_current > 0) history_current--;
     } else { // Вниз
         if (history_current < history_count - 1) history_current++;
     }
-    
-    return (history_current >= 0 && history_current < history_count) ? 
+
+    return (history_current >= 0 && history_current < history_count) ?
            command_history[history_current] : "";
 }
 
@@ -143,15 +144,15 @@ int getBalance(AVLNode* node) {
 
 AVLNode* insertAVL(AVLNode* node, const char* key, long position) {
     if (!node) return newAVLNode(key, position);
-    
+
     int cmp = strcmp(key, node->key);
     if (cmp < 0) node->left = insertAVL(node->left, key, position);
     else if (cmp > 0) node->right = insertAVL(node->right, key, position);
     else return node;
-    
+
     node->height = 1 + max(height(node->left), height(node->right));
     int balance = getBalance(node);
-    
+
     if (balance > 1 && strcmp(key, node->left->key) < 0)
         return rightRotate(node);
     if (balance < -1 && strcmp(key, node->right->key) > 0)
@@ -188,13 +189,13 @@ void searchTextInAVL(AVLNode* root, const char* search_text, long** results, int
 void create_table(const char* table_name, const char* field_definitions) {
     char filename[100];
     snprintf(filename, sizeof(filename), "%s_%s.bin", TABLE_PREFIX, table_name);
-    
+
     FILE* file = fopen(filename, "wb");
     if (!file) {
         printf("Error creating table\n");
         return;
     }
-    
+
     Table table;
     strcpy(table.name, table_name);
     strcpy(table.filename, filename);
@@ -203,77 +204,118 @@ void create_table(const char* table_name, const char* field_definitions) {
     table.auto_increment = 1;
     table.data_file = NULL;
     for (int i = 0; i < MAX_FIELDS; i++) table.indexes[i] = NULL;
-    
+
+    // Создаем копию для безопасного парсинга
     char def_copy[MAX_QUERY_LENGTH];
     strcpy(def_copy, field_definitions);
-    char* token = strtok(def_copy, ",");
-    
-    while (token && table.field_count < MAX_FIELDS) {
-        while (*token == ' ') token++;
-        
+
+    // Парсим поля с учетом вложенных скобок
+    char* start = def_copy;
+    char* end;
+    int bracket_count = 0;
+
+    while (*start && table.field_count < MAX_FIELDS) {
+        // Пропускаем пробелы и запятые
+        while (*start == ' ' || *start == ',') start++;
+        if (*start == '\0') break;
+
+        // Ищем конец определения поля
+        end = start;
+        bracket_count = 0;
+
+        while (*end) {
+            if (*end == '(') bracket_count++;
+            else if (*end == ')') bracket_count--;
+            else if (*end == ',' && bracket_count == 0) break;
+            end++;
+        }
+
+        // Временный терминатор
+        char temp = *end;
+        *end = '\0';
+
+        // Парсим отдельное поле
         char field_name[MAX_FIELD_NAME];
-        char field_type[20];
-        if (sscanf(token, "%s %s", field_name, field_type) == 2) {
+        char field_type[50];
+        int field_size = 0;
+
+        // Парсим имя и тип поля
+        if (sscanf(start, "%s %s", field_name, field_type) >= 2) {
             Field field;
             strcpy(field.name, field_name);
-            
+
+            // Обрабатываем тип с размером (text(50), varchar(100))
+            char* bracket = strchr(field_type, '(');
+            if (bracket != NULL) {
+                *bracket = '\0'; // Отделяем тип от размера
+                if (sscanf(bracket + 1, "%d", &field_size) == 1) {
+                    char* closing_bracket = strchr(bracket + 1, ')');
+                    if (closing_bracket) *closing_bracket = '\0';
+                }
+            }
+
             if (strcmp(field_type, "int") == 0) {
                 field.type = FIELD_INT;
                 field.size = sizeof(int);
-            } else if (strncmp(field_type, "text", 4) == 0) {
+            }
+            else if (strcmp(field_type, "text") == 0 || strcmp(field_type, "varchar") == 0) {
                 field.type = FIELD_TEXT;
-                field.size = 255;
-                char* bracket = strchr(token, '(');
-                if (bracket && sscanf(bracket, "(%d)", &field.size) == 1) {}
-            } else if (strcmp(field_type, "bool") == 0) {
+                field.size = (field_size > 0) ? field_size : 255; // default
+            }
+            else if (strcmp(field_type, "bool") == 0) {
                 field.type = FIELD_BOOL;
                 field.size = sizeof(bool);
-            } else {
+            }
+            else {
                 printf("Unknown field type: %s\n", field_type);
+                *end = temp;
                 fclose(file);
+                remove(filename);
                 return;
             }
-            
+
             table.record_size += field.size;
             table.fields[table.field_count++] = field;
         }
-        token = strtok(NULL, ",");
+
+        // Восстанавливаем строку
+        *end = temp;
+        start = end + 1;
     }
-    
+
     fwrite(&table, sizeof(Table), 1, file);
     fclose(file);
-    printf("Table '%s' created\n", table_name);
+    printf("Table '%s' created with %d fields\n", table_name, table.field_count);
 }
-
 bool load_table(const char* table_name) {
     char filename[100];
     snprintf(filename, sizeof(filename), "%s_%s.bin", TABLE_PREFIX, table_name);
-    
+
     FILE* file = fopen(filename, "rb+");
     if (!file) {
         printf("Table '%s' not found\n", table_name);
         return false;
     }
-    
+
     if (fread(&current_table, sizeof(Table), 1, file) != 1) {
         fclose(file);
         printf("Error reading table\n");
         return false;
     }
-    
+
     current_table.data_file = file;
-    
+
     // Rebuild indexes from data
     fseek(file, sizeof(Table), SEEK_SET);
     char* record = malloc(current_table.record_size);
     long position = ftell(file);
-    
+
     while (fread(record, current_table.record_size, 1, file)) {
         int offset = 0;
         for (int i = 0; i < current_table.field_count; i++) {
             Field field = current_table.fields[i];
             char key[256] = {0};
-            
+
             switch (field.type) {
                 case FIELD_INT: {
                     int value;
@@ -292,14 +334,14 @@ bool load_table(const char* table_name) {
                     break;
                 }
             }
-            
+
             current_table.indexes[i] = insertAVL(current_table.indexes[i], key, position);
             offset += field.size;
         }
         position = ftell(file);
     }
     free(record);
-    
+
     table_loaded = true;
     printf("Table '%s' loaded with indexes\n", table_name);
     return true;
@@ -310,21 +352,21 @@ void insert_into_table(const char* values) {
         printf("No table selected\n");
         return;
     }
-    
+
     char values_copy[MAX_QUERY_LENGTH];
     strcpy(values_copy, values);
     char* token = strtok(values_copy, ",");
-    
+
     char record[MAX_RECORD_SIZE] = {0};
     int offset = 0;
-    
+
     for (int i = 0; i < current_table.field_count && token; i++) {
         while (*token == ' ' || *token == '\'') token++;
         char* end = token + strlen(token) - 1;
         while (end > token && (*end == ' ' || *end == '\'')) *end-- = '\0';
-        
+
         Field field = current_table.fields[i];
-        
+
         switch (field.type) {
             case FIELD_INT: {
                 int value = atoi(token);
@@ -343,18 +385,18 @@ void insert_into_table(const char* values) {
         offset += field.size;
         token = strtok(NULL, ",");
     }
-    
+
     fseek(current_table.data_file, 0, SEEK_END);
     long position = ftell(current_table.data_file);
     fwrite(record, current_table.record_size, 1, current_table.data_file);
     fflush(current_table.data_file);
-    
+
     // Update indexes
     offset = 0;
     for (int i = 0; i < current_table.field_count; i++) {
         Field field = current_table.fields[i];
         char key[256] = {0};
-        
+
         switch (field.type) {
             case FIELD_INT: {
                 int value;
@@ -373,11 +415,11 @@ void insert_into_table(const char* values) {
                 break;
             }
         }
-        
+
         current_table.indexes[i] = insertAVL(current_table.indexes[i], key, position);
         offset += field.size;
     }
-    
+
     //printf("1 row inserted\n");
 }
 
@@ -386,16 +428,16 @@ void select_all() {
         printf("No table selected\n");
         return;
     }
-    
+
     fseek(current_table.data_file, sizeof(Table), SEEK_SET);
     char record[MAX_RECORD_SIZE];
     int count = 0;
-    
+
     while (fread(record, current_table.record_size, 1, current_table.data_file)) {
         int offset = 0;
         for (int i = 0; i < current_table.field_count; i++) {
             Field field = current_table.fields[i];
-            
+
             switch (field.type) {
                 case FIELD_INT: {
                     int value;
@@ -423,7 +465,7 @@ void select_all() {
         printf("\n");
         count++;
     }
-    
+
     printf("%d rows returned\n", count);
 }
 
@@ -432,7 +474,7 @@ void select_field(const char* field_name) {
         printf("No table selected\n");
         return;
     }
-    
+
     int field_index = -1;
     for (int i = 0; i < current_table.field_count; i++) {
         if (strcmp(current_table.fields[i].name, field_name) == 0) {
@@ -440,24 +482,24 @@ void select_field(const char* field_name) {
             break;
         }
     }
-    
+
     if (field_index == -1) {
         printf("Field '%s' not found\n", field_name);
         return;
     }
-    
+
     fseek(current_table.data_file, sizeof(Table), SEEK_SET);
     char record[MAX_RECORD_SIZE];
     int count = 0;
-    
+
     while (fread(record, current_table.record_size, 1, current_table.data_file)) {
         int offset = 0;
         for (int i = 0; i < field_index; i++) {
             offset += current_table.fields[i].size;
         }
-        
+
         Field field = current_table.fields[field_index];
-        
+
         switch (field.type) {
             case FIELD_INT: {
                 int value;
@@ -481,7 +523,7 @@ void select_field(const char* field_name) {
         }
         count++;
     }
-    
+
     printf("%d rows returned\n", count);
 }
 
@@ -492,12 +534,12 @@ bool compare_values(const char* field_value, const char* operator, const char* c
     else if (strcmp(operator, "!=") == 0) {
         return strcmp(field_value, compare_value) != 0;
     }
-    
+
     // Для числовых сравнений
     if (field_type == FIELD_INT || field_type == FIELD_BOOL) {
         int field_val = atoi(field_value);
         int cmp_val = atoi(compare_value);
-        
+
         if (strcmp(operator, ">") == 0) {
             return field_val > cmp_val;
         }
@@ -511,7 +553,7 @@ bool compare_values(const char* field_value, const char* operator, const char* c
             return field_val <= cmp_val;
         }
     }
-    
+
     return false;
 }
 
@@ -520,7 +562,7 @@ void select_where(const char* field_name, const char* operator, const char* valu
         printf("No table selected\n");
         return;
     }
-    
+
     int field_index = -1;
     for (int i = 0; i < current_table.field_count; i++) {
         if (strcmp(current_table.fields[i].name, field_name) == 0) {
@@ -528,14 +570,14 @@ void select_where(const char* field_name, const char* operator, const char* valu
             break;
         }
     }
-    
+
     if (field_index == -1) {
         printf("Field '%s' not found\n", field_name);
         return;
     }
-    
+
     Field field = current_table.fields[field_index];
-    
+
     // Убираем кавычки из значения, если они есть
     char clean_value[100];
     strcpy(clean_value, value);
@@ -543,19 +585,19 @@ void select_where(const char* field_name, const char* operator, const char* valu
         memmove(clean_value, clean_value + 1, strlen(clean_value) - 2);
         clean_value[strlen(clean_value) - 2] = '\0';
     }
-    
+
     fseek(current_table.data_file, sizeof(Table), SEEK_SET);
     char record[MAX_RECORD_SIZE];
     int count = 0;
-    
+
     while (fread(record, current_table.record_size, 1, current_table.data_file)) {
         int offset = 0;
         for (int i = 0; i < field_index; i++) {
             offset += current_table.fields[i].size;
         }
-        
+
         char field_value[256] = {0};
-        
+
         switch (field.type) {
             case FIELD_INT: {
                 int val;
@@ -574,12 +616,12 @@ void select_where(const char* field_name, const char* operator, const char* valu
                 break;
             }
         }
-        
+
         if (compare_values(field_value, operator, clean_value, field.type)) {
             int print_offset = 0;
             for (int i = 0; i < current_table.field_count; i++) {
                 Field f = current_table.fields[i];
-                
+
                 switch (f.type) {
                     case FIELD_INT: {
                         int val;
@@ -608,7 +650,7 @@ void select_where(const char* field_name, const char* operator, const char* valu
             count++;
         }
     }
-    
+
     printf("%d rows returned\n", count);
 }
 
@@ -617,25 +659,25 @@ void find_text(const char* search_text) {
         printf("No table selected\n");
         return;
     }
-    
+
     printf("Searching for text: '%s'\n", search_text);
-    
+
     fseek(current_table.data_file, sizeof(Table), SEEK_SET);
     char record[MAX_RECORD_SIZE];
     int count = 0;
-    
+
     while (fread(record, current_table.record_size, 1, current_table.data_file)) {
         bool found = false;
         int offset = 0;
-        
+
         for (int i = 0; i < current_table.field_count; i++) {
             Field field = current_table.fields[i];
-            
+
             if (field.type == FIELD_TEXT) {
                 char text[field.size + 1];
                 strncpy(text, record + offset, field.size);
                 text[field.size] = '\0';
-                
+
                 if (strstr(text, search_text) != NULL) {
                     found = true;
                     break;
@@ -643,12 +685,12 @@ void find_text(const char* search_text) {
             }
             offset += field.size;
         }
-        
+
         if (found) {
             offset = 0;
             for (int i = 0; i < current_table.field_count; i++) {
                 Field field = current_table.fields[i];
-                
+
                 switch (field.type) {
                     case FIELD_INT: {
                         int value;
@@ -677,7 +719,7 @@ void find_text(const char* search_text) {
             count++;
         }
     }
-    
+
     if (count == 0) {
         printf("No records found with text: '%s'\n", search_text);
     } else {
@@ -691,11 +733,11 @@ void load_macro(const char* filename) {
         printf("Cannot open file: %s\n", filename);
         return;
     }
-    
+
     printf("Loading macro from %s:\n", filename);
     char line[MAX_QUERY_LENGTH];
     int line_num = 1;
-    
+
     while (fgets(line, sizeof(line), file)) {
         line[strcspn(line, "\n")] = '\0';
         if (strlen(line) > 0 && line[0] != '#') {
@@ -704,7 +746,7 @@ void load_macro(const char* filename) {
         }
         line_num++;
     }
-    
+
     fclose(file);
     printf("Macro execution completed\n");
 }
@@ -712,13 +754,42 @@ void load_macro(const char* filename) {
 void process_command(const char* command) {
     char cmd[20], rest[MAX_QUERY_LENGTH] = {0};
     sscanf(command, "%19s %[^\n]", cmd, rest);
-    
+
     for (char* p = cmd; *p; p++) *p = toupper(*p);
-    
+
     if (strcmp(cmd, "CREATE") == 0) {
-        char table_name[50], fields[500];
-        if (sscanf(rest, "TABLE %s (%[^)]", table_name, fields) == 2) {
-            create_table(table_name, fields);
+        // Улучшенный парсинг CREATE TABLE
+        char* table_pos = strstr(rest, "TABLE");
+        if (table_pos) {
+            char* open_bracket = strchr(table_pos, '(');
+            if (open_bracket) {
+                // Извлекаем имя таблицы
+                char table_name[MAX_TABLE_NAME] = {0};
+                char* table_start = table_pos + 5; // "TABLE"
+                while (*table_start == ' ') table_start++;
+
+                char* table_end = table_start;
+                while (*table_end && *table_end != ' ' && *table_end != '(') table_end++;
+
+                strncpy(table_name, table_start, table_end - table_start);
+                table_name[table_end - table_start] = '\0';
+
+                // Извлекаем определения полей (все внутри скобок)
+                char* fields_start = open_bracket + 1;
+                char* fields_end = strrchr(fields_start, ')');
+
+                if (fields_end) {
+                    char fields[MAX_QUERY_LENGTH] = {0};
+                    strncpy(fields, fields_start, fields_end - fields_start);
+                    fields[fields_end - fields_start] = '\0';
+
+                    create_table(table_name, fields);
+                } else {
+                    printf("Syntax error: missing closing bracket\n");
+                }
+            } else {
+                printf("Syntax: CREATE TABLE name (field1 type, field2 type, ...)\n");
+            }
         } else {
             printf("Syntax: CREATE TABLE name (field1 type, field2 type, ...)\n");
         }
@@ -732,46 +803,58 @@ void process_command(const char* command) {
         }
     }
     else if (strcmp(cmd, "INSERT") == 0) {
-        char values[500];
-        if (sscanf(rest, "INTO %*s VALUES (%[^)]", values) == 1) {
-            insert_into_table(values);
+        char table_name[50], values[500];
+        if (sscanf(rest, "INTO %s VALUES (%[^)]", table_name, values) == 2) {
+            // Проверяем, что выбрана правильная таблица
+            if (table_loaded && strcmp(current_table.name, table_name) != 0) {
+                printf("Wrong table selected. Use 'USE %s' first\n", table_name);
+            } else if (!table_loaded) {
+                printf("No table selected. Use 'USE tablename' first\n");
+            } else {
+                insert_into_table(values);
+            }
         } else {
             printf("Syntax: INSERT INTO tablename VALUES (value1, value2, ...)\n");
         }
     }
     else if (strcmp(cmd, "SELECT") == 0) {
+        if (!table_loaded) {
+            printf("No table selected\n");
+            return;
+        }
+
         if (strstr(rest, "WHERE") != NULL) {
             char field_name[50], operator[10], value[100];
-            
+
             // Улучшенный парсинг WHERE
             char* where_pos = strstr(rest, "WHERE");
             if (where_pos) {
                 char where_part[200];
                 strcpy(where_part, where_pos + 6); // "WHERE " = 6 символов
-                
+
                 // Убираем начальные пробелы
                 char* start = where_part;
                 while (*start == ' ') start++;
-                
+
                 // Ищем поле
                 char* space1 = strchr(start, ' ');
                 if (space1) {
                     *space1 = '\0';
                     strcpy(field_name, start);
-                    
+
                     // Ищем оператор
                     char* op_start = space1 + 1;
                     while (*op_start == ' ') op_start++;
-                    
+
                     char* space2 = strchr(op_start, ' ');
                     if (space2) {
                         *space2 = '\0';
                         strcpy(operator, op_start);
-                        
+
                         // Ищем значение
                         char* val_start = space2 + 1;
                         while (*val_start == ' ') val_start++;
-                        
+
                         // Обрабатываем кавычки
                         if (*val_start == '\'') {
                             char* end_quote = strchr(val_start + 1, '\'');
@@ -788,7 +871,7 @@ void process_command(const char* command) {
                             char* end = value + strlen(value) - 1;
                             while (end > value && *end == ' ') *end-- = '\0';
                         }
-                        
+
                         select_where(field_name, operator, value);
                     } else {
                         printf("Syntax error: missing operator or value\n");
@@ -824,7 +907,95 @@ void process_command(const char* command) {
             printf("Syntax: LOAD filename\n");
         }
     }
-    else if (strcmp(cmd, "EXIT") == 0) {
+    else if (strcmp(cmd, "DELETE") == 0) {
+        char table_name[50], condition[100];
+        if (sscanf(rest, "FROM %s WHERE %[^\n]", table_name, condition) == 2) {
+            if (table_loaded && strcmp(current_table.name, table_name) == 0) {
+                printf("DELETE command not implemented yet\n");
+            } else {
+                printf("Table '%s' not selected. Use 'USE %s' first\n", table_name, table_name);
+            }
+        } else {
+            printf("Syntax: DELETE FROM tablename WHERE condition\n");
+        }
+    }
+    else if (strcmp(cmd, "DROP") == 0) {
+        char table_name[50];
+        if (sscanf(rest, "TABLE %s", table_name) == 1) {
+            char filename[100];
+            snprintf(filename, sizeof(filename), "%s_%s.bin", TABLE_PREFIX, table_name);
+            if (remove(filename) == 0) {
+                printf("Table '%s' dropped\n", table_name);
+                if (table_loaded && strcmp(current_table.name, table_name) == 0) {
+                    table_loaded = false;
+                    if (current_table.data_file) fclose(current_table.data_file);
+                }
+            } else {
+                printf("Table '%s' not found\n", table_name);
+            }
+        } else {
+            printf("Syntax: DROP TABLE tablename\n");
+        }
+    }
+    else if (strcmp(cmd, "TABLES") == 0) {
+        DIR* dir = opendir(".");
+        if (dir == NULL) {
+            printf("Error opening directory\n");
+            return;
+        }
+
+        printf("Available tables:\n");
+        struct dirent* entry;
+        int count = 0;
+
+        while ((entry = readdir(dir)) != NULL) {
+            if (strncmp(entry->d_name, TABLE_PREFIX, 3) == 0) {
+                // Извлекаем имя таблицы из имени файла
+                char* underscore = strchr(entry->d_name, '_');
+                if (underscore != NULL) {
+                    char table_name[MAX_TABLE_NAME];
+                    strcpy(table_name, underscore + 1);
+                    char* dot = strchr(table_name, '.');
+                    if (dot != NULL) *dot = '\0';
+                    printf("  %s\n", table_name);
+                    count++;
+                }
+            }
+        }
+        closedir(dir);
+
+        if (count == 0) {
+            printf("  No tables found\n");
+        }
+    }
+    else if (strcmp(cmd, "DESCRIBE") == 0) {
+        if (!table_loaded) {
+            printf("No table selected\n");
+            return;
+        }
+
+        printf("Table: %s\n", current_table.name);
+        printf("Fields (%d):\n", current_table.field_count);
+        for (int i = 0; i < current_table.field_count; i++) {
+            const char* type_str;
+            switch (current_table.fields[i].type) {
+                case FIELD_INT: type_str = "int"; break;
+                case FIELD_TEXT: type_str = "text"; break;
+                case FIELD_BOOL: type_str = "bool"; break;
+                default: type_str = "unknown"; break;
+            }
+            printf("  %s %s", current_table.fields[i].name, type_str);
+            if (current_table.fields[i].type == FIELD_TEXT) {
+                printf("(%d)", current_table.fields[i].size);
+            }
+            printf("\n");
+        }
+    }
+    else if (strcmp(cmd, "EXIT") == 0 || strcmp(cmd, "QUIT") == 0) {
+        if (table_loaded && current_table.data_file) {
+            fclose(current_table.data_file);
+        }
+        printf("Goodbye!\n");
         exit(0);
     }
     else if (strcmp(cmd, "HELP") == 0) {
@@ -836,28 +1007,37 @@ void process_command(const char* command) {
         printf("  SELECT field FROM tablename\n");
         printf("  SELECT * FROM tablename WHERE field operator value\n");
         printf("  FIND TEXT 'searchtext'\n");
+        printf("  DELETE FROM tablename WHERE condition\n");
+        printf("  DROP TABLE tablename\n");
+        printf("  TABLES - List all tables\n");
+        printf("  DESCRIBE - Show table structure\n");
         printf("  LOAD filename - Execute macro from file\n");
-        printf("  EXIT\n");
-        printf("\nWHERE operators: =, ==, !=, >, <, >=, <=\n");
+        printf("  EXIT/QUIT - Exit program\n");
+        printf("\nField types: int, text(size), bool\n");
+        printf("WHERE operators: =, !=, >, <, >=, <=\n");
+        printf("Examples:\n");
+        printf("  CREATE TABLE users (id int, name text(50), age int, active bool)\n");
+        printf("  INSERT INTO users VALUES (1, 'John', 25, true)\n");
+        printf("  SELECT * FROM users WHERE age > 20\n");
     }
     else {
         printf("Unknown command: %s\n", cmd);
+        printf("Type HELP for available commands\n");
     }
-    
+
     add_to_history(command);
 }
-
 // Функция для чтения команды с поддержкой истории
 char* read_command_with_history() {
     static char command[MAX_QUERY_LENGTH] = {0};
     int pos = 0;
     history_current = history_count;
-    
+
     printf("ODQ> ");
     fflush(stdout);
-    
+
     enable_raw_mode();
-    
+
     while (1) {
         char c;
         if (read(STDIN_FILENO, &c, 1) == 1) {
@@ -912,13 +1092,13 @@ char* read_command_with_history() {
 int main() {
     printf("ODQ SQL Console with AVL Indexing\n");
     printf("Type 'HELP' for available commands\n\n");
-    
+
     while (1) {
         char* command = read_command_with_history();
         if (strlen(command) > 0) {
             process_command(command);
         }
     }
-    
+
     return 0;
 }
