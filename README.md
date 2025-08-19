@@ -16,7 +16,8 @@ Database with AVL-tree
    - DROP table
    - LOAD <file macros> : Команды можно записать в макрос и выполнить их одной командой
    - USE <db name> 
-5) История команд сохраняется и доступна для повтора
+3) История команд сохраняется и доступна для повтора
+4) Поддержка аргументов 
 
 Протестировано на БД в 500Гб и поиск шустрый.
 
@@ -71,6 +72,24 @@ id: 5 | name: 'Ella'
 id: 6 | name: 'John'
 6 rows returned
 ODQ> 
+```
+
+Поддержка аргументов
+```
+# Загрузка макроса
+./odq_sql LOAD init.macro
+
+# Несколько команд
+./odq_sql "CREATE TABLE users (id int, name text(50))" "USE users"
+
+# Комбинация
+./odq_sql LOAD init.macro "SELECT * FROM users"
+
+# Синтаксис LOAD=
+./odq_sql LOAD=init.macro
+
+# Пакетный режим (без интерактивного)
+./odq_sql LOAD init.macro --batch
 ```
 
 Сравним с другими БД:
