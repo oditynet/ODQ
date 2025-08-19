@@ -77,10 +77,10 @@ ODQ>
 Примеры команд:
 ```
         CREATE TABLE name (field1 type, field2 type, ...)
-        USE tablename\n
-        INSERT INTO tablename VALUES (value1, value2, ...)\
+        USE tablename
+        INSERT INTO tablename VALUES (value1, value2, ...)
         SELECT * FROM tablename
-        SELECT field FROM tablename\
+        SELECT field FROM tablename
         SELECT * FROM tablename WHERE field operator value
         FIND TEXT 'searchtext'
         DELETE FROM tablename WHERE condition
@@ -88,8 +88,8 @@ ODQ>
         TABLES - List all tables
         DESCRIBE - Show table structure
         LOAD filename - Execute macro from file
-        EXIT/QUIT - Exit program\
-        Field types: int, text(size), bool\
+        EXIT/QUIT - Exit program
+        Field types: int, text(size), bool
         WHERE operators: =, !=, >, <, >=, <=
 
 ```
