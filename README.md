@@ -1,4 +1,12 @@
-# ODQ
+<div align="center">
+<img src="https://github.com/oditynet/ODQ/blob/main/odq.png" title="example" width="800" />
+  <h1>  ODQ </h1>
+</div>
+
+<img alt="GitHub code size in bytes" src="https://img.shields.io/github/languages/code-size/oditynet/ODQ"></img>
+<img alt="GitHub license" src="https://img.shields.io/github/license/oditynet/ODQ"></img>
+<img alt="GitHub commit activity" src="https://img.shields.io/github/commit-activity/m/oditynet/ODQ"></img>
+<img alt="GitHub Repo stars" src="https://img.shields.io/github/stars/oditynet/ODQ"></img>
 
 *В разработке
 
