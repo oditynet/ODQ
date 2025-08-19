@@ -727,6 +727,7 @@ void find_text(const char* search_text) {
     }
 }
 
+// Улучшенная функция load_macro
 void load_macro(const char* filename) {
     FILE* file = fopen(filename, "r");
     if (!file) {
@@ -737,18 +738,29 @@ void load_macro(const char* filename) {
     printf("Loading macro from %s:\n", filename);
     char line[MAX_QUERY_LENGTH];
     int line_num = 1;
+    int command_count = 0;
 
     while (fgets(line, sizeof(line), file)) {
         line[strcspn(line, "\n")] = '\0';
-        if (strlen(line) > 0 && line[0] != '#') {
-            //printf("\n[Line %d] %s\n", line_num, line);
-            process_command(line);
+
+        // Пропускаем пустые строки и комментарии
+        if (strlen(line) == 0) continue;
+        if (line[0] == '#') continue;
+
+        // Убираем ведущие пробелы
+        char* command_start = line;
+        while (*command_start == ' ') command_start++;
+
+        if (strlen(command_start) > 0) {
+            printf("\n[Line %d] %s\n", line_num, command_start);
+            process_command(command_start);
+            command_count++;
         }
         line_num++;
     }
 
     fclose(file);
-    printf("Macro execution completed\n");
+    printf("Macro execution completed. %d commands executed.\n", command_count);
 }
 
 void process_command(const char* command) {
@@ -1027,7 +1039,30 @@ void process_command(const char* command) {
 
     add_to_history(command);
 }
-// Функция для чтения команды с поддержкой истории
+
+void handle_command_line_args(int argc, char* argv[]) {
+    if (argc < 2) return;
+
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "LOAD") == 0 && i + 1 < argc) {
+            printf("Loading macro from command line: %s\n", argv[i + 1]);
+            load_macro(argv[i + 1]);
+            i++; // Пропускаем следующий аргумент (имя файла)
+        }
+        else if (strncmp(argv[i], "LOAD=", 5) == 0) {
+            const char* filename = argv[i] + 5;
+            printf("Loading macro from command line: %s\n", filename);
+            load_macro(filename);
+        }
+        else {
+            // Выполняем команду напрямую
+            printf("Executing command: %s\n", argv[i]);
+            process_command(argv[i]);
+        }
+    }
+}
+
+// Улучшенная функция чтения команды с историей
 char* read_command_with_history() {
     static char command[MAX_QUERY_LENGTH] = {0};
     int pos = 0;
@@ -1068,6 +1103,12 @@ char* read_command_with_history() {
                             printf("%s", command);
                             fflush(stdout);
                         }
+                        else if (seq[1] == 'C') { // Стрелка вправо
+                            // Можно добавить перемещение курсора
+                        }
+                        else if (seq[1] == 'D') { // Стрелка влево
+                            // Можно добавить перемещение курсора
+                        }
                     }
                 }
             }
@@ -1078,6 +1119,12 @@ char* read_command_with_history() {
                     fflush(stdout);
                 }
             }
+            else if (c == 9) { // Tab - автодополнение
+                // Можно добавить автодополнение команд
+                printf("\nAvailable commands: CREATE, USE, SELECT, INSERT, FIND, LOAD, EXIT\n");
+                printf("ODQ> %s", command); // Восстанавливаем prompt
+                fflush(stdout);
+            }
             else if (c >= 32 && c < 127) { // Печатные символы
                 if (pos < MAX_QUERY_LENGTH - 1) {
                     command[pos++] = c;
@@ -1085,14 +1132,59 @@ char* read_command_with_history() {
                     fflush(stdout);
                 }
             }
+            else if (c == 3) { // Ctrl+C
+                printf("\n^C\n");
+                disable_raw_mode();
+                strcpy(command, "");
+                return command;
+            }
+            else if (c == 4) { // Ctrl+D
+                printf("\n^D\n");
+                disable_raw_mode();
+                strcpy(command, "EXIT");
+                return command;
+            }
         }
     }
 }
 
-int main() {
+int main(int argc, char* argv[]) {
     printf("ODQ SQL Console with AVL Indexing\n");
     printf("Type 'HELP' for available commands\n\n");
 
+    // Обрабатываем аргументы командной строки
+    if (argc > 1) {
+        printf("Processing command line arguments...\n");
+        handle_command_line_args(argc, argv);
+
+        // Если были только команды из аргументов - выходим
+        if (argc == 2 && (strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)) {
+            printf("Usage: %s [COMMAND] [LOAD filename] [LOAD=filename]\n", argv[0]);
+            printf("Examples:\n");
+            printf("  %s \"CREATE TABLE users (id int, name text(50))\"\n", argv[0]);
+            printf("  %s LOAD init.macro\n", argv[0]);
+            printf("  %s LOAD=init.macro \"USE users\" \"SELECT * FROM users\"\n", argv[0]);
+            return 0;
+        }
+
+        // Проверяем, нужно ли продолжать интерактивный режим
+        bool interactive = true;
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(argv[i], "--batch") == 0 || strcmp(argv[i], "-b") == 0) {
+                interactive = false;
+                break;
+            }
+        }
+
+        if (!interactive) {
+            printf("Batch mode completed.\n");
+            return 0;
+        }
+
+        printf("\nEntering interactive mode...\n");
+    }
+
+    // Основной интерактивный цикл
     while (1) {
         char* command = read_command_with_history();
         if (strlen(command) > 0) {
