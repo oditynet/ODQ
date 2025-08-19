@@ -12,6 +12,13 @@ Database with AVL-tree
 
 Протестировано на БД в 500Гб и поиск шустрый.
 
+Сборка:
+```
+gcc ODQ.c -o ODQ
+gcc generate-text.c -o generate-text
+```
+
+
 ```
 -rw-r--r-- 1 odity odity    5941190 авг 19 18:00 ODQ_users.bin
 ```
