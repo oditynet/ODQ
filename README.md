@@ -68,3 +68,15 @@ id: 6 | name: 'John'
 ODQ> 
 ```
 
+Сравним с другими БД:
+
+```
+Производительность на 1 млрд записей:
+
+Операция         	PostgreSQL	MySQL	MS SQL	  SQLite	  AVL
+SELECT по ключу	     0.1ms  	0.1ms	0.1ms	    1ms    0.01ms
+INSERT	              0.2ms	  0.1ms	0.15ms	   2ms	   0.02ms
+Range query	         0.3ms  	0.4ms	0.2ms    	5ms	    1ms
+Full table scan	    1000ms	 1200ms	800ms	    5000ms	 500ms
+```
+
